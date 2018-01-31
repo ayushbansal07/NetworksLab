@@ -28,6 +28,11 @@
 
 using namespace std;
 
+struct file_details{
+    char filename[MAX_FILENAME_SIZE];
+    int filesize;
+};
+
 void print_md5_sum(unsigned char* md) {
     int i;
     for(i=0; i <MD5_DIGEST_LENGTH; i++) {
@@ -90,22 +95,30 @@ int main(int argc, char **argv) {
 
     bzero(buf, BUFSIZE);
     //char * intsz = itoa(filesize);
-    std::stringstream ss;
+    /*std::stringstream ss;
     ss << filesize;
     string msg = filename + " " + ss.str();
-    strcpy(buf,msg.c_str()); 
+    strcpy(buf,msg.c_str()); */
+
+    file_details filedetails;
+    filedetails.filesize = filesize;
+    strcpy(filedetails.filename,filename.c_str());
+    
 
     /* send the message line to the server */
-    n = write(sockfd, buf, strlen(buf));
+    n = write(sockfd, &filedetails, sizeof(filedetails));
     if (n < 0) 
-      error("ERROR writing to socket");
+      error("ERROR writing FIle Details to socket");
 
     /* print the server's reply */
     bzero(buf, BUFSIZE);
-    n = read(sockfd, buf, BUFSIZE);
+
+    file_details fd_rec;
+    n = read(sockfd, &fd_rec, BUFSIZE);
     if (n < 0) 
-      error("ERROR reading from socket");
-    if(strcmp(buf,msg.c_str())==0){
+      error("ERROR reading File Details acknowledgement from socket");
+
+    if(strcmp(filedetails.filename,fd_rec.filename)==0 && filedetails.filesize == fd_rec.filesize){
         cout<<"Ackowledgement from server succesfully received"<<endl;
     }
     else    {

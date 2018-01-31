@@ -20,8 +20,10 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <string>
 
 #define BUFSIZE 1024
+#define MAX_FILE_NAME 30
 
 using namespace std;
 
@@ -60,6 +62,10 @@ struct hostent {
 /*
  * error - wrapper for perror
  */
+struct file_details{
+    char filename[MAX_FILE_NAME];
+    int filesize;
+};
 
 void error(char *msg) {
   perror(msg);
@@ -164,24 +170,31 @@ int main(int argc, char **argv) {
 
 
     bzero(buf, BUFSIZE);
-    n = read(childfd, buf, BUFSIZE);
+
+    file_details fd;
+    n = read(childfd, &fd, sizeof(fd));
+
     if (n < 0) 
       error("ERROR reading from socket");
-    printf("server received %d bytes: %s\n", n, buf);
+    printf("server received %d bytes", n);
+
+    string filename = string(fd.filename);
+    cout<<"GERE#########"<<endl;
+    int filesize = fd.filesize;
     
     /* 
      * write: echo the input string back to the client 
      */
-    n = write(childfd, buf, strlen(buf));
+    n = write(childfd, &fd, sizeof(fd));
     if (n < 0) 
       error("ERROR writing to socket");
 
-    char * buf_tokens = strtok(buf," ");
+    /*char * buf_tokens = strtok(buf," ");
     string filename;
     filename = string(buf_tokens);
     buf_tokens = strtok(NULL, " ");
     int filesize = atoi(buf_tokens);
-    cout<<"File Name "<<filename<<" File Size "<<filesize<<endl;
+    cout<<"File Name "<<filename<<" File Size "<<filesize<<endl;*/
     /*while(buf_tokens!= NULL){
       filename
       buf_tokens = strtok(NULL, " ");
