@@ -16,6 +16,10 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <errno.h>
+#include <openssl/md5.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 
 #define BUFSIZE 1024
 
@@ -56,6 +60,7 @@ struct hostent {
 /*
  * error - wrapper for perror
  */
+
 void error(char *msg) {
   perror(msg);
   exit(1);
@@ -221,6 +226,19 @@ int main(int argc, char **argv) {
     }
     cout<<"Received FILE successfully"<<endl;
     fclose(image);
+
+    unsigned char result[MD5_DIGEST_LENGTH];
+    char * file_buffer_md5;
+    int file_descript = open((filename + "_rec").c_str(), O_RDONLY);
+
+    file_buffer_md5 = (char *) mmap(0, filesize, PROT_READ, MAP_SHARED, file_descript, 0);
+    MD5((unsigned char*) file_buffer_md5, filesize, result);
+    munmap(file_buffer_md5, filesize); 
+    n = write(childfd, result, MD5_DIGEST_LENGTH);
+    if (n < 0) 
+      error("ERROR writing MD5 to socket");
+    
+    close(file_descript);
 
     close(childfd);
   }

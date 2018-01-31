@@ -14,6 +14,10 @@
 #include <fstream>
 #include <string>
 #include <sstream>
+#include <openssl/md5.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 
 #define BUFSIZE 1024
 #define MAX_FILENAME_SIZE 30
@@ -23,6 +27,13 @@
  */
 
 using namespace std;
+
+void print_md5_sum(unsigned char* md) {
+    int i;
+    for(i=0; i <MD5_DIGEST_LENGTH; i++) {
+            printf("%02x",md[i]);
+    }
+}
 
 void error(char *msg) {
     perror(msg);
@@ -119,6 +130,37 @@ int main(int argc, char **argv) {
         bzero(buf, BUFSIZE);
     }
 
+    fclose(file);
+
+    unsigned char result[MD5_DIGEST_LENGTH];
+    char * file_buffer_md5;
+    int file_descript = open((filename + "_rec").c_str(), O_RDONLY);
+
+    file_buffer_md5 = (char *) mmap(0, filesize, PROT_READ, MAP_SHARED, file_descript, 0);
+    MD5((unsigned char*) file_buffer_md5, filesize, result);
+    munmap(file_buffer_md5, filesize); 
+
+    unsigned char result_rec[MD5_DIGEST_LENGTH];
+    n = read(sockfd, result_rec, MD5_DIGEST_LENGTH);
+    if (n < 0) 
+      error("ERROR reading MD5 from socket");
+    if(memcmp(result,result_rec,MD5_DIGEST_LENGTH)==0)
+    {
+        cout<<"MD5 Matched"<<endl;
+    }
+    else
+    {
+        cout<<"MD5 NOT Matched"<<endl;
+    }
+
+    close(file_descript);
+
+
+    /*file_buffer = mmap(0, file_size, PROT_READ, MAP_SHARED, file_descript, 0);
+    MD5((unsigned char*) file_buffer, file_size, result);
+    munmap(file_buffer, file_size); 
+    print_md5_sum(result);
+*/
 
     close(sockfd);
     return 0;
