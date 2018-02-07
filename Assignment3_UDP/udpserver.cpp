@@ -3,6 +3,7 @@
  * usage: udpserver <port_for_server>
  */
 
+#include <iostream>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -12,7 +13,16 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+
+#include <openssl/md5.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+
+#include <sys/ioctl.h>
+#include <errno.h>
 #include "utils.h"
+
+using namespace std;
 
 /*
  * error - wrapper for perror
@@ -83,32 +93,70 @@ int main(int argc, char **argv) {
     /*
      * recvfrom: receive a UDP datagram from a client
      */
-    bzero(buf, BUFF_SIZE);
-    n = recvfrom(sockfd, buf, BUFF_SIZE, 0,
-		 (struct sockaddr *) &clientaddr, &clientlen);
-    if (n < 0)
-      error("ERROR in recvfrom");
 
-    /* 
-     * gethostbyaddr: determine who sent the datagram
-     */
-    hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, 
-			  sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-    if (hostp == NULL)
-      error("ERROR on gethostbyaddr");
-    hostaddrp = inet_ntoa(clientaddr.sin_addr);
-    if (hostaddrp == NULL)
-      error("ERROR on inet_ntoa\n");
-    printf("server received datagram from %s (%s)\n", 
-	   hostp->h_name, hostaddrp);
-    printf("server received %d/%d bytes: %s\n", strlen(buf), n, buf);
-    
-    /* 
-     * sendto: echo the input back to the client 
-     */
-    n = sendto(sockfd, buf, strlen(buf), 0, 
-	       (struct sockaddr *) &clientaddr, clientlen);
+    file_details fd;
+    n = recvfrom(sockfd, &fd, sizeof(fd), 0, (struct sockaddr *) &clientaddr, &clientlen);
+    if(n<0) cout<<"ERROR reading File Details from socket"<<endl;
+
+    string filename = fd.filename;
+    int filesize = fd.filesize;
+    cout<<"File Name: "<<filename<<" File Size: "<<filesize<<" bytes"<<endl;
+
+    n = sendto(sockfd, &fd, sizeof(fd), 0, (struct sockaddr *) &clientaddr, clientlen);
+    if(n<0) cout<<"Error acknowledging file details"<<endl;
+
+    /*****************/
+
+    FILE *recv_file = fopen(("rec_" + filename).c_str(), "w");
+    segment data_seg;
+    bzero(data_seg.data, BUFF_SIZE);
+    int recv_size = 0;
+    int write_size = 0;
+    int buffersize = 0;
+    int seq_rec = -1;
+
+    while(recv_size < filesize){
+
+      bzero(data_seg.data, BUFF_SIZE);
+      ioctl(sockfd, FIONREAD, &buffersize); 
+      if(buffersize > 0)
+      {
+        n = recvfrom(sockfd, &data_seg, sizeof(data_seg), 0, (struct sockaddr *) &clientaddr, &clientlen);
+        if(n<0) cout<<"Error receving data"<<endl;
+
+        // sleep(3);
+        int seqNo = data_seg.seqNo;
+        n = sendto(sockfd, &seqNo, sizeof(seqNo), 0, (struct sockaddr *) &clientaddr,clientlen);
+        if(n<0) cout<<"Error sending ACK, pkt = "<<seqNo<<endl;
+
+        if(seqNo == (seq_rec + 1)%MAX_SEQ_NO)
+        {
+          write_size = fwrite(data_seg.data,1,data_seg.len, recv_file);
+          recv_size += data_seg.len;
+          seq_rec = seqNo;
+          cout<<"Recevive size "<<recv_size<<endl;
+        }
+      }
+
+    }
+
+    cout<<"Received FILE successfully"<<endl;
+    fclose(recv_file);
+
+    unsigned char result[MD5_DIGEST_LENGTH];
+    char * file_buffer_md5;
+    int file_descript = open(("rec_" + filename).c_str(), O_RDONLY);
+
+    file_buffer_md5 = (char *) mmap(0, filesize, PROT_READ, MAP_SHARED, file_descript, 0);
+    MD5((unsigned char*) file_buffer_md5, filesize, result);
+    munmap(file_buffer_md5, filesize); 
+    // n = write(childfd, result, MD5_DIGEST_LENGTH);
+    n = sendto(sockfd, &result, sizeof(result), 0, (struct sockaddr *) &clientaddr,clientlen);
     if (n < 0) 
-      error("ERROR in sendto");
+      error("ERROR writing MD5 to socket");
+    
+    close(file_descript);
   }
 }
+
+//3396326 - 472250
