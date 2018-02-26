@@ -164,12 +164,34 @@ int main(int argc, char ** argv)
 			{
 				cout<<"User exists"<<endl;
 				//TO CONTINUE
+				struct sockaddr_in connection_addr = itr->S;
+				int childfd = socket(AF_INET, SOCK_STREAM, 0);
+				if(childfd < 0)
+					cout<<"Error creating socket to write"<<endl;
+				if(connect(childfd, (struct sockaddr *) &connection_addr, sizeof(connection_addr)) < 0)
+				{
+					cout<<"Error conencting to server"<<endl;
+				}
+				if(write(childfd, buffer, MAX_BUF_SIZE) < 0)
+					cout<<"Error writing to socket"<<endl;
+				for(int i=0;i<5;i++)
+				{
+					if(open_peers[i]==0)
+					{
+						open_peers[i] = childfd;
+						cout<<"Peer added to list"<<endl;
+						break;
+					}
+					
+				}
+
 			}
 
 		}
 
 		if(FD_ISSET(server_sock,&readfds))
 		{
+			clientlen = sizeof(clientaddr);
 			int childfd = accept(server_sock, (struct sockaddr *) &clientaddr, &clientlen);
 			if(childfd < 0)
 			{
@@ -182,6 +204,7 @@ int main(int argc, char ** argv)
 				{
 					open_peers[i] = childfd;
 					cout<<"Peer added to list"<<endl;
+					break;
 				}
 			}
 
