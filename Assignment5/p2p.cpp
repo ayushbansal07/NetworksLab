@@ -86,7 +86,7 @@ int main(int argc, char ** argv)
 
 	map<string, struct sockaddr_in> user_info = get_user_info();
 	map<PI, int> isOpen = init_isOpen();
-	vector<int> open_peers(5,0);
+	//vector<int> open_peers(5,0);
 
 	server_sock = socket(AF_INET,SOCK_STREAM,0);
 	if(server_sock < 0) cout<<"Error opening socket"<<endl;
@@ -118,6 +118,9 @@ int main(int argc, char ** argv)
 	char buffer[MAX_BUF_SIZE];
 
 	int num_open = 0;
+	struct timeval tv;
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
 
 	while(1)
 	{
@@ -199,6 +202,8 @@ int main(int argc, char ** argv)
 					isOpen[temp] = childfd;
 					num_open++;
 					cout<<"Opening Connection "<<temp.F<<":"<<temp.S<<endl;
+					if(write(childfd,&portno,sizeof(int))<0) cout<<"Error telling port"<<endl;
+					//if(setsockopt(childfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) cout<<"Error in sockopt"<<endl;
 					if(write(childfd, buffer, MAX_BUF_SIZE) < 0)
 						cout<<"Error writing to socket"<<endl;	
 				}
@@ -249,10 +254,12 @@ int main(int argc, char ** argv)
 			socklen_t peer_len = sizeof(peer_addr);
 			getpeername(childfd, (struct sockaddr *)&peer_addr, &peer_len);
 			temp.F = string(inet_ntoa(peer_addr.sin_addr));
-			temp.S = ntohs(peer_addr.sin_port);
+			if(read(childfd, &temp.S,sizeof(int)) < 0) cout<<"Error reading port no"<<endl;
+			//temp.S = ntohs(peer_addr.sin_port);
 			isOpen[temp] = childfd;
 			num_open++;
 			cout<<"Accept Opening connection "<<temp.F<<":"<<temp.S<<endl;
+			//if(setsockopt(childfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) cout<<"Error in sockopt"<<endl;
 			/*for(int i=0;i<5;i++)
 			{
 				if(open_peers[i]==0)
