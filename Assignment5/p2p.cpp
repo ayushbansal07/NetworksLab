@@ -18,20 +18,15 @@
 
 #define MAX_NAME_LEN 20
 #define MAX_BUF_SIZE 1024
-#define TIMEOUTVAL 10
+#define TIMEOUTVAL 30
+#define MAX_CONNECTIONS 5
 #define S second
 #define F first
 
 using namespace std;
 typedef pair<string, int> PI;
 typedef pair<int, time_t> PT;
-
-
-/*struct user_info{
-	char name[MAX_NAME_LEN];
-	struct sockaddr_in address;
-};*/
-
+typedef pair<PT, string> PTN;
 
 map<string, struct sockaddr_in> get_user_info(){
 	ifstream f;
@@ -60,8 +55,8 @@ map<string, struct sockaddr_in> get_user_info(){
 	return res;
 }
 
-map<PI, PT> init_isOpen(){
-	map<PI, PT> ans;
+map<PI, PTN> init_isOpen(){
+	map<PI, PTN> ans;
 	ifstream f;
 	f.open("user_info.in");
 	string name;
@@ -72,7 +67,7 @@ map<PI, PT> init_isOpen(){
 		int portno;
 		f>>portno;
 		PI temp = make_pair(hostname,portno);
-		ans[temp] = make_pair(0, time(NULL));
+		ans[temp] = make_pair(make_pair(0, time(NULL)),name);
 	}
 	return ans;
 }
@@ -89,7 +84,7 @@ int main(int argc, char ** argv)
 	int portno = atoi(argv[1]);
 
 	map<string, struct sockaddr_in> user_info = get_user_info();
-	map<PI, PT> isOpen = init_isOpen();
+	map<PI, PTN> isOpen = init_isOpen();
 	//vector<int> open_peers(5,0);
 
 	server_sock = socket(AF_INET,SOCK_STREAM,0);
@@ -108,7 +103,7 @@ int main(int argc, char ** argv)
 	if(bind(server_sock, (struct sockaddr *) &serveraddr,sizeof(serveraddr)) < 0)
 		cout<<"Error binding Server Socket to port"<<endl;
 
-	if(listen(server_sock, 5) < 0){
+	if(listen(server_sock, MAX_CONNECTIONS) < 0){
 		cout<<"Error listening"<<endl;
 	}
 
@@ -133,13 +128,13 @@ int main(int argc, char ** argv)
 		FD_ZERO(&readfds);
 		FD_SET(server_sock, &readfds);
 		FD_SET(0,&readfds);
-		map<PI, PT>::iterator itr;
+		map<PI, PTN>::iterator itr;
 		for(itr = isOpen.begin(); itr != isOpen.end();itr++)
 		{
-			int sd = itr->S.F;
+			int sd = itr->S.F.F;
 			if(sd > 0)
 			{
-				double diff_time = difftime(time(NULL),itr->S.S);
+				double diff_time = difftime(time(NULL),itr->S.F.S);
 				if(diff_time <= TIMEOUTVAL)
 				{
 					FD_SET(sd, &readfds);
@@ -150,23 +145,15 @@ int main(int argc, char ** argv)
 				{
 					cout<<"Disconnecting "<<itr->F.F<<":"<<itr->F.S<<endl;
 					close(sd);
-					itr->S.F = 0;
-					itr->S.S = time(NULL);
+					itr->S.F.F = 0;
+					itr->S.F.S = time(NULL);
 					num_open--;
 				}
 				
 			}
 		}
-		/*for(int i=0;i<5;i++)
-		{
-			if(open_peers[i] > 0)
-			{
-				FD_SET(open_peers[i],&readfds);
-				max_sd = max(open_peers[i], max_sd);
-			}
-		}*/
 
-		cout<<"--------------------\nWaiting for Connection or i/p, num_open = "<<num_open<<"\n-----------------------"<<endl;
+		cout<<"-----------------------------\nWaiting for Connection or user input, No. of Open Connections = "<<num_open<<"\n-----------------------------"<<endl;
 
 
 		tv.tv_sec = TIMEOUTVAL - floor(max_diff_time);
@@ -188,32 +175,30 @@ int main(int argc, char ** argv)
 			}
 			string ip = string(buffer);
 			size_t found = ip.find("/");
-			//cout<<"User: "<<ip.substr(0,found)<<" Meaasge: "<<ip.substr(found+1)<<endl;
 			string username = ip.substr(0,found);
-			cout<<"Username: "<<username<<endl;
 			strcpy(buffer, ip.substr(found+1).c_str());
 			map<string,struct sockaddr_in>::iterator itr2 = user_info.find(username);
 			if(itr2 == user_info.end())
 			{
-				cout<<"Invalid Username"<<endl;
+				cout<<"Invalid Username. User Does Not Exist"<<endl;
 			}
 			else
 			{
-				cout<<"User exists"<<endl;
+				//cout<<"User exists"<<endl;
 				//See if connection already exists
 				PI temp;
 				temp.F = string(inet_ntoa(itr2->S.sin_addr));
 				temp.S = ntohs(itr2->S.sin_port);
-				int childfd = isOpen[temp].F;
+				int childfd = isOpen[temp].F.F;
 				if(childfd > 0)
 				{
 					if(write(childfd, buffer, MAX_BUF_SIZE) < 0)
 						cout<<"Error writing to socket"<<endl;
-					isOpen[temp].S = time(NULL);
+					isOpen[temp].F.S = time(NULL);
 				}
 				else
 				{
-					if(num_open >= 5) continue;
+					if(num_open >= MAX_CONNECTIONS) continue;
 					struct sockaddr_in connection_addr = itr2->S;
 					childfd = socket(AF_INET, SOCK_STREAM, 0);
 					if(childfd < 0)
@@ -222,38 +207,14 @@ int main(int argc, char ** argv)
 					{
 						cout<<"Error conencting to server"<<endl;
 					}
-					isOpen[temp] = make_pair(childfd,time(NULL));
+					isOpen[temp] = make_pair(make_pair(childfd,time(NULL)),isOpen[temp].S);
 					num_open++;
-					cout<<"Opening Connection "<<temp.F<<":"<<temp.S<<endl;
+					cout<<"-----------------------------\nOpening Connection "<<temp.F<<":"<<temp.S<<"\n-----------------------------\n";
 					if(write(childfd,&portno,sizeof(int))<0) cout<<"Error telling port"<<endl;
 					//if(setsockopt(childfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) cout<<"Error in sockopt"<<endl;
 					if(write(childfd, buffer, MAX_BUF_SIZE) < 0)
 						cout<<"Error writing to socket"<<endl;	
 				}
-
-
-				//TO CONTINUE
-				/*struct sockaddr_in connection_addr = itr->S;
-				int childfd = socket(AF_INET, SOCK_STREAM, 0);
-				if(childfd < 0)
-					cout<<"Error creating socket to write"<<endl;
-				if(connect(childfd, (struct sockaddr *) &connection_addr, sizeof(connection_addr)) < 0)
-				{
-					cout<<"Error conencting to server"<<endl;
-				}
-				if(write(childfd, buffer, MAX_BUF_SIZE) < 0)
-					cout<<"Error writing to socket"<<endl;
-				for(int i=0;i<5;i++)
-				{
-					if(open_peers[i]==0)
-					{
-						open_peers[i] = childfd;
-						cout<<"Peer added to list"<<endl;
-						break;
-					}
-					
-				}*/
-
 			}
 
 		}
@@ -261,7 +222,7 @@ int main(int argc, char ** argv)
 
 		if(FD_ISSET(server_sock,&readfds))
 		{
-			if(num_open >= 5){
+			if(num_open >= MAX_CONNECTIONS){
 				continue;
 			}
 
@@ -279,19 +240,9 @@ int main(int argc, char ** argv)
 			temp.F = string(inet_ntoa(peer_addr.sin_addr));
 			if(read(childfd, &temp.S,sizeof(int)) < 0) cout<<"Error reading port no"<<endl;
 			//temp.S = ntohs(peer_addr.sin_port);
-			isOpen[temp] = make_pair(childfd,time(NULL));
+			isOpen[temp] = make_pair(make_pair(childfd,time(NULL)),isOpen[temp].S);
 			num_open++;
-			cout<<"Accept Opening connection "<<temp.F<<":"<<temp.S<<endl;
-			//if(setsockopt(childfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) cout<<"Error in sockopt"<<endl;
-			/*for(int i=0;i<5;i++)
-			{
-				if(open_peers[i]==0)
-				{
-					open_peers[i] = childfd;
-					cout<<"Peer added to list"<<endl;
-					break;
-				}
-			}*/
+			cout<<"-----------------------------\nAccept Opening connection "<<temp.F<<":"<<temp.S<<"\n-----------------------------\n";
 
 		}
 
@@ -299,47 +250,29 @@ int main(int argc, char ** argv)
 		bzero(buffer, MAX_BUF_SIZE);
 		for(itr = isOpen.begin(); itr != isOpen.end(); itr++)
 		{
-			int sd = itr->S.F;
+			int sd = itr->S.F.F;
 			if(sd==0) continue;
 			if(FD_ISSET(sd,&readfds))
 			{
 				int n = read(sd,buffer,MAX_BUF_SIZE);
 				if(n==0)
 				{
-					cout<<"Disconnecting "<<itr->F.F<<":"<<itr->F.S<<endl;
+					cout<<"-----------------------------\nDisconnecting "<<itr->F.F<<":"<<itr->F.S<<endl<<"-----------------------------\n";
 					close(sd);
-					itr->S = make_pair(0,time(NULL));
+					itr->S = make_pair(make_pair(0,time(NULL)),itr->S.S);
 					num_open--;
 				}
 				else
 				{
-					cout<<buffer<<endl;
+					cout<<itr->S.S<<": "<<buffer<<endl;
 					bzero(buffer,MAX_BUF_SIZE);
-					itr->S.S = time(NULL);
+					itr->S.F.S = time(NULL);
 				}
 			}
 		}
-		/*for(int i=0;i<5;i++)
-		{
-			if(FD_ISSET(open_peers[i],&readfds))
-			{
-				int n = read(open_peers[i], buffer, MAX_BUF_SIZE);
-				if(n==0)
-				{
-					cout<<"Disconnecting"<<endl;
-					close(open_peers[i]);
-					open_peers[i] = 0;
-				}
-				cout<<buffer<<endl;
-				bzero(buffer,MAX_BUF_SIZE);
-			}
-		}*/
 		
 
 	}
-
-
-
 
 
 }
