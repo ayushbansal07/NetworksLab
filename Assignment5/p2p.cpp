@@ -13,14 +13,18 @@
 #include <utility>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <time.h>
+#include <cmath>
 
 #define MAX_NAME_LEN 20
 #define MAX_BUF_SIZE 1024
+#define TIMEOUTVAL 10
 #define S second
 #define F first
 
 using namespace std;
 typedef pair<string, int> PI;
+typedef pair<int, time_t> PT;
 
 
 /*struct user_info{
@@ -56,8 +60,8 @@ map<string, struct sockaddr_in> get_user_info(){
 	return res;
 }
 
-map<PI, int> init_isOpen(){
-	map<PI, int> ans;
+map<PI, PT> init_isOpen(){
+	map<PI, PT> ans;
 	ifstream f;
 	f.open("user_info.in");
 	string name;
@@ -68,7 +72,7 @@ map<PI, int> init_isOpen(){
 		int portno;
 		f>>portno;
 		PI temp = make_pair(hostname,portno);
-		ans[temp] = 0;
+		ans[temp] = make_pair(0, time(NULL));
 	}
 	return ans;
 }
@@ -85,7 +89,7 @@ int main(int argc, char ** argv)
 	int portno = atoi(argv[1]);
 
 	map<string, struct sockaddr_in> user_info = get_user_info();
-	map<PI, int> isOpen = init_isOpen();
+	map<PI, PT> isOpen = init_isOpen();
 	//vector<int> open_peers(5,0);
 
 	server_sock = socket(AF_INET,SOCK_STREAM,0);
@@ -119,22 +123,38 @@ int main(int argc, char ** argv)
 
 	int num_open = 0;
 	struct timeval tv;
-    tv.tv_sec = 5;
+    tv.tv_sec = TIMEOUTVAL;
     tv.tv_usec = 0;
+    
 
 	while(1)
 	{
+		double max_diff_time = 0;
 		FD_ZERO(&readfds);
 		FD_SET(server_sock, &readfds);
 		FD_SET(0,&readfds);
-		map<PI, int>::iterator itr;
+		map<PI, PT>::iterator itr;
 		for(itr = isOpen.begin(); itr != isOpen.end();itr++)
 		{
-			int sd = itr->S;
+			int sd = itr->S.F;
 			if(sd > 0)
 			{
-				FD_SET(sd, &readfds);
-				max_sd = max(sd,max_sd);
+				double diff_time = difftime(time(NULL),itr->S.S);
+				if(diff_time <= TIMEOUTVAL)
+				{
+					FD_SET(sd, &readfds);
+					max_sd = max(sd,max_sd);
+					max_diff_time = max(diff_time,max_diff_time);
+				}
+				else
+				{
+					cout<<"Disconnecting "<<itr->F.F<<":"<<itr->F.S<<endl;
+					close(sd);
+					itr->S.F = 0;
+					itr->S.S = time(NULL);
+					num_open--;
+				}
+				
 			}
 		}
 		/*for(int i=0;i<5;i++)
@@ -148,7 +168,9 @@ int main(int argc, char ** argv)
 
 		cout<<"--------------------\nWaiting for Connection or i/p, num_open = "<<num_open<<"\n-----------------------"<<endl;
 
-		int activity = select(max_sd + 1, &readfds, NULL, NULL, NULL);
+
+		tv.tv_sec = TIMEOUTVAL - floor(max_diff_time);
+		int activity = select(max_sd + 1, &readfds, NULL, NULL, &tv);
 		if(activity < 0)
 		{
 			cout<<"Select error"<<endl;
@@ -182,11 +204,12 @@ int main(int argc, char ** argv)
 				PI temp;
 				temp.F = string(inet_ntoa(itr2->S.sin_addr));
 				temp.S = ntohs(itr2->S.sin_port);
-				int childfd = isOpen[temp];
+				int childfd = isOpen[temp].F;
 				if(childfd > 0)
 				{
 					if(write(childfd, buffer, MAX_BUF_SIZE) < 0)
 						cout<<"Error writing to socket"<<endl;
+					isOpen[temp].S = time(NULL);
 				}
 				else
 				{
@@ -199,7 +222,7 @@ int main(int argc, char ** argv)
 					{
 						cout<<"Error conencting to server"<<endl;
 					}
-					isOpen[temp] = childfd;
+					isOpen[temp] = make_pair(childfd,time(NULL));
 					num_open++;
 					cout<<"Opening Connection "<<temp.F<<":"<<temp.S<<endl;
 					if(write(childfd,&portno,sizeof(int))<0) cout<<"Error telling port"<<endl;
@@ -256,7 +279,7 @@ int main(int argc, char ** argv)
 			temp.F = string(inet_ntoa(peer_addr.sin_addr));
 			if(read(childfd, &temp.S,sizeof(int)) < 0) cout<<"Error reading port no"<<endl;
 			//temp.S = ntohs(peer_addr.sin_port);
-			isOpen[temp] = childfd;
+			isOpen[temp] = make_pair(childfd,time(NULL));
 			num_open++;
 			cout<<"Accept Opening connection "<<temp.F<<":"<<temp.S<<endl;
 			//if(setsockopt(childfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) cout<<"Error in sockopt"<<endl;
@@ -276,7 +299,7 @@ int main(int argc, char ** argv)
 		bzero(buffer, MAX_BUF_SIZE);
 		for(itr = isOpen.begin(); itr != isOpen.end(); itr++)
 		{
-			int sd = itr->S;
+			int sd = itr->S.F;
 			if(sd==0) continue;
 			if(FD_ISSET(sd,&readfds))
 			{
@@ -285,13 +308,14 @@ int main(int argc, char ** argv)
 				{
 					cout<<"Disconnecting "<<itr->F.F<<":"<<itr->F.S<<endl;
 					close(sd);
-					itr->S = 0;
+					itr->S = make_pair(0,time(NULL));
 					num_open--;
 				}
 				else
 				{
 					cout<<buffer<<endl;
 					bzero(buffer,MAX_BUF_SIZE);
+					itr->S.S = time(NULL);
 				}
 			}
 		}
