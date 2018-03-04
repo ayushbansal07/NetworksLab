@@ -88,6 +88,7 @@ int main(int argc, char **argv) {
    * main loop: wait for a datagram, then echo it
    */
   clientlen = sizeof(clientaddr);
+
   while (1) {
 
     /*
@@ -121,8 +122,8 @@ int main(int argc, char **argv) {
 
     while(recv_size < filesize){
     
-    //if(debug_loops%8 ==0)
-   // 	sleep(3);
+    /*if(debug_loops%8 ==0)
+    	sleep(1);*/
 
       bzero(data_seg.data, BUFF_SIZE);
       //ioctl(sockfd, FIONREAD, &buffersize); 
@@ -133,6 +134,7 @@ int main(int argc, char **argv) {
 
         // sleep(3);
         int seqNo = data_seg.seqNo;
+        cout<<"Seq got = "<<seqNo<<", Cummulative seq = "<<seq_rec<<endl;
         if(seqNo == (seq_rec + 1)%MAX_SEQ_NO)
         {
           write_size = fwrite(data_seg.data,1,data_seg.len, recv_file);
@@ -151,6 +153,29 @@ int main(int argc, char **argv) {
 
     cout<<"Received FILE successfully"<<endl;
     fclose(recv_file);
+    while(1)
+    {
+       bzero(data_seg.data, BUFF_SIZE);
+      //ioctl(sockfd, FIONREAD, &buffersize); 
+      //if(buffersize > 0)
+      //{
+        n = recvfrom(sockfd, &data_seg, sizeof(data_seg), 0, (struct sockaddr *) &clientaddr, &clientlen);
+        if(n<0) cout<<"Error receving data"<<endl;
+
+        // sleep(3);
+        int seqNo = data_seg.seqNo;
+        cout<<"Seq got = "<<seqNo<<", Cummulative seq = "<<seq_rec<<endl;
+        if(seqNo == (seq_rec + 1)%MAX_SEQ_NO)
+        {
+          recv_size += data_seg.len;
+          seq_rec = seqNo;
+          //cout<<"Recevive size "<<recv_size<<" Seq No "<<seqNo<<endl;
+          //debug_loops++;
+        }
+        n = sendto(sockfd, &seq_rec, sizeof(seqNo), 0, (struct sockaddr *) &clientaddr,clientlen);
+        if(n<0) cout<<"Error sending ACK, pkt = "<<seqNo<<endl;
+
+    }
 
     /*unsigned char result[MD5_DIGEST_LENGTH];
     char * file_buffer_md5;

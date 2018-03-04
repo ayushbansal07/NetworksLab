@@ -16,6 +16,7 @@
 #include <sys/time.h>
 #include "utils.h"
 #include <vector>
+#include <queue>
 
 #include <openssl/md5.h>
 #include <sys/mman.h>
@@ -107,7 +108,7 @@ int main(int argc, char **argv) {
     cout<<"Sending File as Byte Stream"<<endl;
 
     int file_readSize;
-    vector<segment> data_segs(WINDOW_SIZE);	//Stores all the datagrams currently in the window.
+    queue<segment> data_seg;	//Stores all the datagrams currently in the window.
     int seq = 0;
     int baseptr = -1;
     int currptr = -1;
@@ -118,21 +119,47 @@ int main(int argc, char **argv) {
     
     int seg_ct = 0;
     int sent_size = 0;
-    
+    int window_sz = INIT_WINDOW_SIZE;
+    int already_read = -1;
+    queue<segment> resending_q;
+    int ct_same_ack = 0;
+
     while(!feof(file))
     {
-    	while(baseptr - currptr < WINDOW_SIZE && sent_size < filesize)
+        //cout<<"Window Size "<<window_sz<<endl;
+    	while(baseptr - currptr < window_sz && sent_size < filesize)
     	{
-    		bzero(data_segs[seq%WINDOW_SIZE].data, BUFF_SIZE);
-			data_segs[seq%WINDOW_SIZE].seqNo = seq;
-		    data_segs[seq%WINDOW_SIZE].len = fread(data_segs[seq%WINDOW_SIZE].data, 1, sizeof(data_segs[seq%WINDOW_SIZE].data), file);	//Read BUFF_SIZE (which is equal to size of data_seg.data char array) data from file.
-		    n = sendto(sockfd, &data_segs[seq%WINDOW_SIZE], sizeof(data_segs[seq%WINDOW_SIZE]), 0, (struct sockaddr *) &serveraddr, serverlen);
-		    if(n<0) cout<<"Error sending data to server, pkt no = "<<seq<<endl;
-		    else {
-		    	sent_size += data_segs[seq%WINDOW_SIZE].len;
-		    	baseptr ++;
-		    	seq  = (seq +1)%MAX_SEQ_NO;
-		    }
+            
+            if(baseptr < already_read)
+            {
+                //TODO
+                segment temp_seg = resending_q.front();
+                resending_q.pop();
+                data_seg.push(temp_seg);
+                cout<<"Resending pkt = "<<temp_seg.seqNo<<endl;
+                n = sendto(sockfd, &temp_seg, sizeof(temp_seg), 0, (struct sockaddr *) &serveraddr, serverlen);
+                if(n<0) cout<<"Error sending data to server, pkt no = "<<seq<<endl;
+                else {
+                    baseptr ++;
+                }
+            }
+            else
+            {
+                segment temp_seg;
+                bzero(temp_seg.data, BUFF_SIZE);
+                temp_seg.seqNo = seq;
+                temp_seg.len = fread(temp_seg.data, 1, sizeof(temp_seg.data), file);    //Read BUFF_SIZE (which is equal to size of data_seg.data char array) data from file.
+                data_seg.push(temp_seg);
+                n = sendto(sockfd, &temp_seg, sizeof(temp_seg), 0, (struct sockaddr *) &serveraddr, serverlen);
+                if(n<0) cout<<"Error sending data to server, pkt no = "<<seq<<endl;
+                else {
+                    sent_size += temp_seg.len;
+                    baseptr ++;
+                    seq  = (seq +1)%MAX_SEQ_NO;
+                    already_read++;
+                }
+            }
+            
     	}
 	    if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) error("Error in sockopt"); //Timer of 1 sec.
     	
@@ -143,56 +170,144 @@ int main(int argc, char **argv) {
         	n = recvfrom(sockfd, &ack_no, sizeof(ack_no), 0, (struct sockaddr *) &serveraddr, &serverlen);
         	if(n<0) {
         		//Timeout happened while receiving ack
-        		for(int i=0;i<baseptr - currptr && sent_size < filesize;i++)
+        		/*for(int i=0;i<baseptr - currptr && sent_size < filesize;i++)
         		{
-					cout<<"Resending, pkt = "<<(seq - WINDOW_SIZE + i)<<endl;
-		    		n = sendto(sockfd, &data_segs[(seq - WINDOW_SIZE + i)%WINDOW_SIZE], sizeof(data_segs[(seq - WINDOW_SIZE + i)%WINDOW_SIZE]), 0, (struct sockaddr *) &serveraddr, serverlen);
+					cout<<"Resending, pkt = "<<(seq - window_sz + i)<<endl;
+		    		n = sendto(sockfd, &data_segs[(seq - window_sz + i)%window_sz], sizeof(data_segs[(seq - window_sz + i)%window_sz]), 0, (struct sockaddr *) &serveraddr, serverlen);
 		    		if(n<0){ 
-		    			cout<<"Error sending(r) data to server, pkt no = "<<(seq - WINDOW_SIZE + i)<<endl;
+		    			cout<<"Error sending(r) data to server, pkt no = "<<(seq - window_sz + i)<<endl;
 		    			i--;
 		    		}
-				}
+				}*/
+
+                window_sz = max(INIT_WINDOW_SIZE,window_sz/2);
+                resending_q = data_seg;
+                queue<segment> empty_queue;
+                data_seg = empty_queue;
+                baseptr = currptr;
+
+
+                /*for(int i=0;i<baseptr -currptr && sent_size <filesize;i++)
+                {
+                    segment this_seg = data_seg.front();
+                    cout<<"Resedning pkt = "<<this_seg.seqNo<<endl;
+                    n = sendto(sockfd, &this_seg,sizeof(this_seg),0,(struct sockaddr *)&serveraddr,serverlen);
+                    if(n<0)
+                    {
+                        cout<<"Error sending(r) data to server, pkt no = "<<this_seg.seqNo<<endl;
+                        i--;
+                    }
+                    else
+                    {
+                        data_seg.pop();
+                        data_seg.push(this_seg);
+                    }
+                }*/
         		
         		if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) error("Error in sockopt");
-        		ack_no = -1;        		
+        		ack_no = -1;     
+                break;   		
         	}
         	else {
-        		if(ack_no == (currptr + 1)%MAX_SEQ_NO) {
+                int diff_ack_curr = ack_no - currptr;
+
+                currptr = ack_no;
+                window_sz += diff_ack_curr;
+                //cout<<"Differece  = "<<diff_ack_curr<<" ack_no = "<<ack_no<<" currptr = "<<currptr<<"Window = "<<window_sz<<endl;
+                while(!data_seg.empty())
+                {
+                    segment temp_seg;
+                    temp_seg = data_seg.front();
+                    if(temp_seg.seqNo <= currptr)
+                    {
+                        data_seg.pop();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                break;
+        		/*if(ack_no == (currptr + 1)%MAX_SEQ_NO) {
         			currptr ++;
+                    data_seg.pop();
+                    window_sz++;
         			break;
-        		}
+        		}*/
         	}
         }
         
     }
     
     //Receive pending acks
+    //cout<<"HERE#############################################################"<<endl;
     while(currptr != baseptr)
     {
     	int ack_no = -1;
         while(1)
         {
+            //cout<<"WAITING FOR ACK ###########"<<"currptr = "<<currptr<<" baseptr = "<<baseptr<<endl;
         	n = recvfrom(sockfd, &ack_no, sizeof(ack_no), 0, (struct sockaddr *) &serveraddr, &serverlen);
-        	if(n<0) {
+            if(ack_no == currptr) ct_same_ack++;
+            else ct_same_ack = 0;
+        	if(n<0 || ct_same_ack >=3) {
         	
-        		for(int i=0;i<baseptr - currptr && sent_size < filesize;i++)
+        		/*for(int i=0;i<baseptr - currptr && sent_size < filesize;i++)
         		{
-					cout<<"Resending, pkt = "<<(seq - WINDOW_SIZE + i)<<endl;
-		    		n = sendto(sockfd, &data_segs[(seq - WINDOW_SIZE + i)%WINDOW_SIZE], sizeof(data_segs[(seq - WINDOW_SIZE + i)%WINDOW_SIZE]), 0, (struct sockaddr *) &serveraddr, serverlen);
+					cout<<"Resending, pkt = "<<(seq - window_sz + i)<<endl;
+		    		n = sendto(sockfd, &data_segs[(seq - window_sz + i)%window_sz], sizeof(data_segs[(seq - window_sz + i)%window_sz]), 0, (struct sockaddr *) &serveraddr, serverlen);
 		    		if(n<0){ 
-		    			cout<<"Error sending(r) data to server, pkt no = "<<(seq - WINDOW_SIZE + i)<<endl;
+		    			cout<<"Error sending(r) data to server, pkt no = "<<(seq - window_sz + i)<<endl;
 		    			i--;
 		    		}
-				}
+				}*/
+                window_sz = max(INIT_WINDOW_SIZE,window_sz/2);
+                baseptr = currptr;
+
+
+                for(int i=0;i<baseptr -currptr;i++)
+                {
+                    segment this_seg = data_seg.front();
+                    //cout<<"Resedning pkt = "<<this_seg.seqNo<<endl;
+                    n = sendto(sockfd, &this_seg,sizeof(this_seg),0,(struct sockaddr *)&serveraddr,serverlen);
+                    if(n<0)
+                    {
+                        cout<<"Error sending(r) data to server, pkt no = "<<this_seg.seqNo<<endl;
+                        i--;
+                    }
+                    else
+                    {
+                        data_seg.pop();
+                        data_seg.push(this_seg);
+                    }
+                }
         		
         		if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) error("Error in sockopt");
-        		ack_no = -1;        		
+        		ack_no = -1;   
+                break;     		
         	}
         	else {
-        		if(ack_no == (currptr + 1)%MAX_SEQ_NO) {
+        		/*if(ack_no == (currptr + 1)%MAX_SEQ_NO) {
         			currptr ++;
+                    data_seg.pop();
         			break;
-        		}
+        		}*/
+                //cout<<"curr ptr = "<<currptr<<" bseptr = "<<baseptr<<" empty status of resending "<<resending_q.empty()<<"data seg "<<data_seg.empty()<<endl;
+                currptr = ack_no;
+                while(!data_seg.empty())
+                {
+                    segment temp_seg;
+                    temp_seg = data_seg.front();
+                    if(temp_seg.seqNo <= currptr)
+                    {
+                        data_seg.pop();
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                break;
         	}
         }
     }

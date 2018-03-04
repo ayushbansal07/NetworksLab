@@ -1,7 +1,7 @@
 #define BUFF_SIZE 1024
 #define MAX_FILE_NAME 30
 #define MAX_SEQ_NO 65535
-#define WINDOW_SIZE 3
+#define INIT_WINDOW_SIZE 3
 
 struct segment{
 	int seqNo;
