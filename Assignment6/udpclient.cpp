@@ -165,6 +165,50 @@ int main(int argc, char **argv) {
     	
 
         int ack_no = -1;
+       /* bool anyrecvd = false;
+        while(1)
+        {
+            n = recvfrom(sockfd, &ack_no, sizeof(ack_no), 0, (struct sockaddr *) &serveraddr, &serverlen);
+            if(n<0){
+                break;
+            }
+            anyrecvd = true;
+        }
+        if(!anyrecvd)
+        {
+            window_sz = max(INIT_WINDOW_SIZE,window_sz/2);
+            while(!data_seg.empty())
+            {
+                resending_q.push(data_seg.front());
+                data_seg.pop();
+            }
+            //resending_q = data_seg;
+            //queue<segment> empty_queue;
+            //data_seg = empty_queue;
+            baseptr = currptr;
+            if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) error("Error in sockopt");
+        }
+        else
+        {
+            cout<<"HERE RECVD ACK = "<<ack_no<<endl;
+            int diff_ack_curr = ack_no - currptr;
+            currptr = ack_no;
+            window_sz += diff_ack_curr;
+            while(!data_seg.empty())
+            {
+                segment temp_seg;
+                temp_seg = data_seg.front();
+                if(temp_seg.seqNo <= currptr)
+                {
+                    data_seg.pop();
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+        }*/
         while(1)
         {
         	n = recvfrom(sockfd, &ack_no, sizeof(ack_no), 0, (struct sockaddr *) &serveraddr, &serverlen);
@@ -178,12 +222,17 @@ int main(int argc, char **argv) {
 		    			cout<<"Error sending(r) data to server, pkt no = "<<(seq - window_sz + i)<<endl;
 		    			i--;
 		    		}
-				}*/
+				}**************/
 
                 window_sz = max(INIT_WINDOW_SIZE,window_sz/2);
-                resending_q = data_seg;
-                queue<segment> empty_queue;
-                data_seg = empty_queue;
+                while(!data_seg.empty())
+                {
+                    resending_q.push(data_seg.front());
+                    data_seg.pop();
+                }
+                //resending_q = data_seg;
+                //queue<segment> empty_queue;
+                //data_seg = empty_queue;
                 baseptr = currptr;
 
 
@@ -202,7 +251,7 @@ int main(int argc, char **argv) {
                         data_seg.pop();
                         data_seg.push(this_seg);
                     }
-                }*/
+                }****************/
         		
         		if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) error("Error in sockopt");
         		ack_no = -1;     
@@ -233,14 +282,24 @@ int main(int argc, char **argv) {
                     data_seg.pop();
                     window_sz++;
         			break;
-        		}*/
+        		}*********************/
         	}
         }
         
     }
     
     //Receive pending acks
-    //cout<<"HERE#############################################################"<<endl;
+    cout<<"HERE#############################################################"<<endl;
+    while(1)
+    {
+        int ack_no = -1;
+        if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) error("Error in sockopt");
+        n = recvfrom(sockfd, &ack_no, sizeof(ack_no), 0, (struct sockaddr *) &serveraddr, &serverlen);
+        if(n<0) break;
+        currptr = ack_no;
+
+    }
+
     while(currptr != baseptr)
     {
     	int ack_no = -1;
@@ -268,7 +327,7 @@ int main(int argc, char **argv) {
                 for(int i=0;i<baseptr -currptr;i++)
                 {
                     segment this_seg = data_seg.front();
-                    //cout<<"Resedning pkt = "<<this_seg.seqNo<<endl;
+                    cout<<"Resedning pkt = "<<this_seg.seqNo<<endl;
                     n = sendto(sockfd, &this_seg,sizeof(this_seg),0,(struct sockaddr *)&serveraddr,serverlen);
                     if(n<0)
                     {
