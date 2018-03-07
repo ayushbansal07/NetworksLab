@@ -131,7 +131,7 @@ int main(int argc, char **argv) {
     	while(baseptr - currptr < window_sz && sent_size < filesize)
     	{
             
-            if(baseptr < already_read)
+            if(!resending_q.empty())
             {
                 //TODO
                 segment temp_seg = resending_q.front();
