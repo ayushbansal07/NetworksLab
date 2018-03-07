@@ -143,8 +143,6 @@ int main(int argc, char **argv) {
         n = recvfrom(sockfd, &data_seg, sizeof(data_seg), 0, (struct sockaddr *) &clientaddr, &clientlen);
         if(n<0) cout<<"Error receving data"<<endl;
 
-        if(to_drop(drop_prob)) continue;
-
         // sleep(3);
         int seqNo = data_seg.seqNo;
         cout<<"Seq got = "<<seqNo<<", Cummulative seq = "<<seq_rec<<endl;
@@ -156,6 +154,7 @@ int main(int argc, char **argv) {
           //cout<<"Recevive size "<<recv_size<<" Seq No "<<seqNo<<endl;
           //debug_loops++;
         }
+        if(to_drop(drop_prob)) continue;
         n = sendto(sockfd, &seq_rec, sizeof(seqNo), 0, (struct sockaddr *) &clientaddr,clientlen);
         if(n<0) cout<<"Error sending ACK, pkt = "<<seqNo<<endl;
 
@@ -175,8 +174,6 @@ int main(int argc, char **argv) {
         n = recvfrom(sockfd, &data_seg, sizeof(data_seg), 0, (struct sockaddr *) &clientaddr, &clientlen);
         if(n<0) cout<<"Error receving data"<<endl;
 
-        if(to_drop(drop_prob)) continue;
-
         // sleep(3);
         int seqNo = data_seg.seqNo;
         cout<<"Seq got = "<<seqNo<<", Cummulative seq = "<<seq_rec<<endl;
@@ -187,6 +184,7 @@ int main(int argc, char **argv) {
           //cout<<"Recevive size "<<recv_size<<" Seq No "<<seqNo<<endl;
           //debug_loops++;
         }
+        if(to_drop(drop_prob)) continue;
         n = sendto(sockfd, &seq_rec, sizeof(seqNo), 0, (struct sockaddr *) &clientaddr,clientlen);
         if(n<0) cout<<"Error sending ACK, pkt = "<<seqNo<<endl;
 
