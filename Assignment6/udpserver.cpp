@@ -32,6 +32,14 @@ void error(char *msg) {
   exit(1);
 }
 
+bool to_drop(float prob)
+{
+  int x = rand()%100 + 1;
+  float y = x*1.0/100.0;
+  if(y <= prob) return true;
+  return false;
+}
+
 int main(int argc, char **argv) {
   int sockfd; /* socket file descriptor - an ID to uniquely identify a socket by the application program */
   int portno; /* port to listen on */
@@ -52,6 +60,9 @@ int main(int argc, char **argv) {
     exit(1);
   }
   portno = atoi(argv[1]);
+  cout<<"Enter packet drop probability"<<endl;
+  float drop_prob;
+  cin>>drop_prob;
 
   /* 
    * socket: create the socket 
@@ -132,6 +143,8 @@ int main(int argc, char **argv) {
         n = recvfrom(sockfd, &data_seg, sizeof(data_seg), 0, (struct sockaddr *) &clientaddr, &clientlen);
         if(n<0) cout<<"Error receving data"<<endl;
 
+        if(to_drop(drop_prob)) continue;
+
         // sleep(3);
         int seqNo = data_seg.seqNo;
         cout<<"Seq got = "<<seqNo<<", Cummulative seq = "<<seq_rec<<endl;
@@ -161,6 +174,8 @@ int main(int argc, char **argv) {
       //{
         n = recvfrom(sockfd, &data_seg, sizeof(data_seg), 0, (struct sockaddr *) &clientaddr, &clientlen);
         if(n<0) cout<<"Error receving data"<<endl;
+
+        if(to_drop(drop_prob)) continue;
 
         // sleep(3);
         int seqNo = data_seg.seqNo;

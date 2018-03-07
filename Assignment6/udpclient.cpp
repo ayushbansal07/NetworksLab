@@ -214,7 +214,7 @@ int main(int argc, char **argv) {
     }
     
     //Receive pending acks
-    cout<<"HERE#############################################################"<<endl;
+    //cout<<"HERE#############################################################"<<endl;
     while(1)
     {
         //int ack_no = -1;
@@ -222,7 +222,6 @@ int main(int argc, char **argv) {
         n = recvfrom(sockfd, &ack_no, sizeof(ack_no), 0, (struct sockaddr *) &serveraddr, &serverlen);
         if(n<0) break;
         currptr = ack_no;
-
     }
 
     while(currptr != baseptr)
@@ -235,24 +234,13 @@ int main(int argc, char **argv) {
             if(ack_no == currptr) ct_same_ack++;
             else ct_same_ack = 0;
         	if(n<0 || ct_same_ack >=3) {
-        	
-        		/*for(int i=0;i<baseptr - currptr && sent_size < filesize;i++)
-        		{
-					cout<<"Resending, pkt = "<<(seq - window_sz + i)<<endl;
-		    		n = sendto(sockfd, &data_segs[(seq - window_sz + i)%window_sz], sizeof(data_segs[(seq - window_sz + i)%window_sz]), 0, (struct sockaddr *) &serveraddr, serverlen);
-		    		if(n<0){ 
-		    			cout<<"Error sending(r) data to server, pkt no = "<<(seq - window_sz + i)<<endl;
-		    			i--;
-		    		}
-				}*/
                 window_sz = max(INIT_WINDOW_SIZE,window_sz/2);
                 baseptr = currptr;
-
 
                 for(int i=0;i<baseptr -currptr;i++)
                 {
                     segment this_seg = data_seg.front();
-                    cout<<"Resedning pkt = "<<this_seg.seqNo<<endl;
+                    cout<<"Resedning pkt(r) = "<<this_seg.seqNo<<endl;
                     n = sendto(sockfd, &this_seg,sizeof(this_seg),0,(struct sockaddr *)&serveraddr,serverlen);
                     if(n<0)
                     {
@@ -271,12 +259,6 @@ int main(int argc, char **argv) {
                 break;     		
         	}
         	else {
-        		/*if(ack_no == (currptr + 1)%MAX_SEQ_NO) {
-        			currptr ++;
-                    data_seg.pop();
-        			break;
-        		}*/
-                //cout<<"curr ptr = "<<currptr<<" bseptr = "<<baseptr<<" empty status of resending "<<resending_q.empty()<<"data seg "<<data_seg.empty()<<endl;
                 currptr = ack_no;
                 while(!data_seg.empty())
                 {
