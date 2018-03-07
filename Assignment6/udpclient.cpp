@@ -214,7 +214,7 @@ int main(int argc, char **argv) {
     }
     
     //Receive pending acks
-    //cout<<"HERE#############################################################"<<endl;
+    cout<<"HERE#############################################################"<<endl;
     while(1)
     {
         //int ack_no = -1;
@@ -224,7 +224,67 @@ int main(int argc, char **argv) {
         currptr = ack_no;
     }
 
-    while(currptr != baseptr)
+    while(!data_seg.empty())
+    {
+        resending_q.push(data_seg.front());
+        data_seg.pop();
+    }
+
+    while(!resending_q.empty())
+    {
+        segment temp_seg;
+        temp_seg = resending_q.front();
+        if(temp_seg.seqNo <= currptr)
+        {
+            resending_q.pop();
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    while(!resending_q.empty())
+    {
+        n = recvfrom(sockfd, &ack_no, sizeof(ack_no), 0, (struct sockaddr *) &serveraddr, &serverlen);
+        if(n<0)
+        {
+            queue<segment> temp_q;
+            while(!resending_q.empty())
+            {
+                segment this_seg = resending_q.front();
+                cout<<"Resedning pkt(r) = "<<this_seg.seqNo<<endl;
+                resending_q.pop();
+                temp_q.push(this_seg);
+                n = sendto(sockfd, &this_seg,sizeof(this_seg),0,(struct sockaddr *)&serveraddr,serverlen);
+                if(n<0)
+                {
+                    cout<<"Error sending(r) data to server, pkt no = "<<this_seg.seqNo<<endl;
+                }
+            }
+            resending_q = temp_q;
+        }
+        else
+        {
+            currptr = ack_no;
+            while(!resending_q.empty())
+            {
+                segment temp_seg;
+                temp_seg = resending_q.front();
+                if(temp_seg.seqNo <= currptr)
+                {
+                    resending_q.pop();
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+        }
+    }
+
+    /*while(currptr != baseptr)
     {
     	//int ack_no = -1;
         while(1)
@@ -234,8 +294,6 @@ int main(int argc, char **argv) {
             if(ack_no == currptr) ct_same_ack++;
             else ct_same_ack = 0;
         	if(n<0 || ct_same_ack >=3) {
-                window_sz = max(INIT_WINDOW_SIZE,window_sz/2);
-                baseptr = currptr;
 
                 for(int i=0;i<baseptr -currptr;i++)
                 {
@@ -276,7 +334,8 @@ int main(int argc, char **argv) {
                 break;
         	}
         }
-    }
+        cout<<"Base ptr = "<<baseptr<<" currptr = "<<currptr<<" ack = "<<ack_no<<endl;
+    }*/
 
     fclose(file);
 
