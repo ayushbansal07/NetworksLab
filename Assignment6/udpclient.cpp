@@ -123,6 +123,7 @@ int main(int argc, char **argv) {
     int already_read = -1;
     queue<segment> resending_q;
     int ct_same_ack = 0;
+    int ack_no = -1;
 
     while(!feof(file))
     {
@@ -162,38 +163,25 @@ int main(int argc, char **argv) {
             
     	}
 	    if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) error("Error in sockopt"); //Timer of 1 sec.
-    	
 
-        int ack_no = -1;
-       /* bool anyrecvd = false;
-        while(1)
-        {
-            n = recvfrom(sockfd, &ack_no, sizeof(ack_no), 0, (struct sockaddr *) &serveraddr, &serverlen);
-            if(n<0){
-                break;
-            }
-            anyrecvd = true;
-        }
-        if(!anyrecvd)
-        {
+    	n = recvfrom(sockfd, &ack_no, sizeof(ack_no), 0, (struct sockaddr *) &serveraddr, &serverlen);
+    	if(n<0) {
             window_sz = max(INIT_WINDOW_SIZE,window_sz/2);
             while(!data_seg.empty())
             {
                 resending_q.push(data_seg.front());
                 data_seg.pop();
             }
-            //resending_q = data_seg;
-            //queue<segment> empty_queue;
-            //data_seg = empty_queue;
-            baseptr = currptr;
-            if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) error("Error in sockopt");
-        }
-        else
-        {
-            cout<<"HERE RECVD ACK = "<<ack_no<<endl;
+            baseptr = currptr;        		
+    		if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) error("Error in sockopt");
+    		//ack_no = -1;  		
+    	}
+    	else {
             int diff_ack_curr = ack_no - currptr;
+
             currptr = ack_no;
             window_sz += diff_ack_curr;
+            //cout<<"Differece  = "<<diff_ack_curr<<" ack_no = "<<ack_no<<" currptr = "<<currptr<<"Window = "<<window_sz<<endl;
             while(!data_seg.empty())
             {
                 segment temp_seg;
@@ -207,84 +195,21 @@ int main(int argc, char **argv) {
                     break;
                 }
             }
-
-        }*/
-        while(1)
-        {
-        	n = recvfrom(sockfd, &ack_no, sizeof(ack_no), 0, (struct sockaddr *) &serveraddr, &serverlen);
-        	if(n<0) {
-        		//Timeout happened while receiving ack
-        		/*for(int i=0;i<baseptr - currptr && sent_size < filesize;i++)
-        		{
-					cout<<"Resending, pkt = "<<(seq - window_sz + i)<<endl;
-		    		n = sendto(sockfd, &data_segs[(seq - window_sz + i)%window_sz], sizeof(data_segs[(seq - window_sz + i)%window_sz]), 0, (struct sockaddr *) &serveraddr, serverlen);
-		    		if(n<0){ 
-		    			cout<<"Error sending(r) data to server, pkt no = "<<(seq - window_sz + i)<<endl;
-		    			i--;
-		    		}
-				}**************/
-
-                window_sz = max(INIT_WINDOW_SIZE,window_sz/2);
-                while(!data_seg.empty())
+            while(!resending_q.empty())
+            {
+                segment temp_seg;
+                temp_seg = resending_q.front();
+                if(temp_seg.seqNo <= currptr)
                 {
-                    resending_q.push(data_seg.front());
-                    data_seg.pop();
+                    resending_q.pop();
                 }
-                //resending_q = data_seg;
-                //queue<segment> empty_queue;
-                //data_seg = empty_queue;
-                baseptr = currptr;
-
-
-                /*for(int i=0;i<baseptr -currptr && sent_size <filesize;i++)
+                else
                 {
-                    segment this_seg = data_seg.front();
-                    cout<<"Resedning pkt = "<<this_seg.seqNo<<endl;
-                    n = sendto(sockfd, &this_seg,sizeof(this_seg),0,(struct sockaddr *)&serveraddr,serverlen);
-                    if(n<0)
-                    {
-                        cout<<"Error sending(r) data to server, pkt no = "<<this_seg.seqNo<<endl;
-                        i--;
-                    }
-                    else
-                    {
-                        data_seg.pop();
-                        data_seg.push(this_seg);
-                    }
-                }****************/
-        		
-        		if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) error("Error in sockopt");
-        		ack_no = -1;     
-                break;   		
-        	}
-        	else {
-                int diff_ack_curr = ack_no - currptr;
-
-                currptr = ack_no;
-                window_sz += diff_ack_curr;
-                //cout<<"Differece  = "<<diff_ack_curr<<" ack_no = "<<ack_no<<" currptr = "<<currptr<<"Window = "<<window_sz<<endl;
-                while(!data_seg.empty())
-                {
-                    segment temp_seg;
-                    temp_seg = data_seg.front();
-                    if(temp_seg.seqNo <= currptr)
-                    {
-                        data_seg.pop();
-                    }
-                    else
-                    {
-                        break;
-                    }
+                    break;
                 }
-                break;
-        		/*if(ack_no == (currptr + 1)%MAX_SEQ_NO) {
-        			currptr ++;
-                    data_seg.pop();
-                    window_sz++;
-        			break;
-        		}*********************/
-        	}
-        }
+            }
+    	}
+    
         
     }
     
@@ -292,7 +217,7 @@ int main(int argc, char **argv) {
     cout<<"HERE#############################################################"<<endl;
     while(1)
     {
-        int ack_no = -1;
+        //int ack_no = -1;
         if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) error("Error in sockopt");
         n = recvfrom(sockfd, &ack_no, sizeof(ack_no), 0, (struct sockaddr *) &serveraddr, &serverlen);
         if(n<0) break;
@@ -302,7 +227,7 @@ int main(int argc, char **argv) {
 
     while(currptr != baseptr)
     {
-    	int ack_no = -1;
+    	//int ack_no = -1;
         while(1)
         {
             //cout<<"WAITING FOR ACK ###########"<<"currptr = "<<currptr<<" baseptr = "<<baseptr<<endl;
@@ -342,7 +267,7 @@ int main(int argc, char **argv) {
                 }
         		
         		if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) error("Error in sockopt");
-        		ack_no = -1;   
+        		//ack_no = -1;   
                 break;     		
         	}
         	else {
