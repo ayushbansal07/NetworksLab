@@ -3,19 +3,55 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <string>
+#include <string.h>
 #include <netdb.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <queue>
+
+#define BUFF_SIZE 1024
+#define SEND_BUFF_CAP 1024000
+#define MSS 1024
+#define MAX_SEQ_NO 1000000000
 
 using namespace std;
 
+struct segment{
+	bool ack;
+	long int ackNo;
+	long int seqNo;
+	int len;
+	long int recv_window;
+	char data[BUFF_SIZE];
+};
+
 class CTP{
-public:
+private:
 	int sockfd;
 	struct sockaddr_in serveraddr;
+	int serverlen;
+	queue<char> sending_buffer;
+	long int cong_wind;
+	long int sshthresh;
+	long int recv_wind;
+	int dupAcks;
+	long int currptr;
+	long int baseptr;
+	long int seq;
+    queue<segment> sendQ;
+    queue<segment> resendQ;
 
 public:
 	CTP(int sockfd, struct sockaddr_in serveraddr);
-	int appSend(string filename);
+	int appSend(char *, long int);
 
+private:
+	void sendbuffer_handle(char *, long int);
+	void * rate_control(void *);
+	segment create_packet(long int *);
+	int parse_packets();
+	int update_window();
+	int recvbuffer_handle();
+	int send_ack();
 };
 #endif
