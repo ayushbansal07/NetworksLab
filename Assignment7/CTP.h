@@ -8,12 +8,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <queue>
+#include <pthread.h>
 
 #define BUFF_SIZE 1024
 #define SEND_BUFF_CAP 1024000
 #define MSS 1024
 #define MAX_SEQ_NO 1000000000
-#define RECV_BUFFER_CAP 1000
+#define RECV_BUFFER_CAP 1024000
 
 using namespace std;
 
@@ -43,18 +44,22 @@ private:
     queue<segment> resendQ;
     long int last_ack;
     int recv_state;
-    queue<segment> recv_buffer;
+    queue<char> recv_buffer;
     long int seq_recv;
+    pthread_t RATE_CONTROLLER, RECEIVER_PROCESS;
 
 public:
 	CTP(int sockfd, struct sockaddr_in serveraddr);
-	int appSend(char *, long int);
+	void appSend(char *, long int);
+	int appRecieve(char *,long int);
 
 private:
 	void sendbuffer_handle(char *, long int);
-	void * rate_control(void *);
+	static void * rate_control_helper(void *);
+	void * rate_control();
 	segment create_packet(long int *);
-	void * receiver_process(void *);
+	static void * receiver_process_helper(void *);
+	void * receiver_process();
 	void resend_data_func();
 	//int parse_packets();
 	void update_window(long int,long int);
