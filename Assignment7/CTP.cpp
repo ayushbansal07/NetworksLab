@@ -23,6 +23,9 @@ CTP::CTP(int sockfd, struct sockaddr_in serveraddr)
 	this->last_ack = -1;
 	this->recv_state = 0;
 	this->recv_wind = SEND_BUFF_CAP;
+	this->seq_recv = -1;
+
+	//Run threads for rate_control and receiver_process
 }
 
 int CTP::appSend(char * data,long int size)
@@ -111,6 +114,7 @@ void * CTP::receiver_process(void * threadid)
 			else
 			{
 				//TODO: DATA
+				recvbuffer_handle(recv_seg);
 			}
 		}
 	}
@@ -233,6 +237,29 @@ segment CTP::create_packet(long int *seqNo)
 	}
 	temp.len = ct;
 	return temp;
+}
+
+void CTP::recvbuffer_handle(segment recvd_seg)
+{
+	if(this->recv_buffer.size() < RECV_BUFFER_CAP)
+	{
+		if(recvd_seg.seqNo == (this->seq_recv + 1)%MAX_SEQ_NO)
+	    {
+			this->recv_buffer.push(recvd_seg);
+			this->seq_recv = (this->seq_recv + recvd_seg.len)%MAX_SEQ_NO;
+	    }
+	}
+	send_ack(this->seq_recv);
+}
+
+void CTP::send_ack(long int ackNo)
+{
+	segment temp;
+	temp.ack = true;
+	temp.ackNo = ackNo;
+	temp.recv_window = (RECV_BUFFER_CAP - this->recv_buffer.size())*MSS;
+	int n = sendto(this->sockfd, &temp,sizeof(temp),0,(struct sockaddr *)&(this->serveraddr),this->serverlen);
+	if(n<0) cout<<"Error sending ack"<<endl;
 }
 
 int main()

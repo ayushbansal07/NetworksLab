@@ -13,6 +13,7 @@
 #define SEND_BUFF_CAP 1024000
 #define MSS 1024
 #define MAX_SEQ_NO 1000000000
+#define RECV_BUFFER_CAP 1000
 
 using namespace std;
 
@@ -42,6 +43,8 @@ private:
     queue<segment> resendQ;
     long int last_ack;
     int recv_state;
+    queue<segment> recv_buffer;
+    long int seq_recv;
 
 public:
 	CTP(int sockfd, struct sockaddr_in serveraddr);
@@ -55,7 +58,7 @@ private:
 	void resend_data_func();
 	//int parse_packets();
 	void update_window(long int,long int);
-	int recvbuffer_handle();
-	int send_ack();
+	void recvbuffer_handle(segment);
+	void send_ack(long int);
 };
 #endif
