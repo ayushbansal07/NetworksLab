@@ -43,6 +43,7 @@ int CTP::appRecieve(char * data,long int size)
 		if(ct==size) break;
 		usleep(1000);
 	}
+	return ct;
 }
 
 void CTP::appSend(char * data,long int size)
@@ -77,6 +78,8 @@ void * CTP::rate_control()
     while(1)
     {
     	long int curr_wind = min(this->cong_wind,this->recv_wind);
+
+		cout<<"Rate Control "<<curr_wind<<endl;
     	while(baseptr - currptr < curr_wind && !this->sending_buffer.empty())
     	{
             if(!this->resendQ.empty())
@@ -103,7 +106,7 @@ void * CTP::rate_control()
             }
             
     	}
-    	sleep(0);
+    	pause();
     }
 }
 
@@ -145,6 +148,7 @@ void * CTP::receiver_process()
 		int n = recvfrom(this->sockfd, &recv_seg, sizeof(recv_seg), 0, (struct sockaddr *) &clientaddr, &clientlen);
 		if(n<0)
 		{
+			cout<<"HERE DATA PACK NOT RECDVD"<<endl;
 			this->ssthresh = max((long int)MSS,this->cong_wind/2);
 			this->cong_wind = MSS;
 			this->dupAcks = 0;
@@ -153,6 +157,7 @@ void * CTP::receiver_process()
 		}
 		else
 		{
+			cout<<"HERE DATA PACK RECDVD################"<<endl;
 			if(recv_seg.ack){
 				update_window(recv_seg.ackNo,recv_seg.recv_window);
 			}
@@ -297,10 +302,10 @@ void CTP::send_ack(long int ackNo)
 	if(n<0) cout<<"Error sending ack"<<endl;
 }
 
-int main()
+/*int main()
 {
 	struct sockaddr_in serveraddr;
 	CTP *my = new CTP(0,serveraddr);
 	char *data = "lion";
 	my->appSend(data,2);
-}
+}*/
