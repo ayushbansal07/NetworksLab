@@ -15,11 +15,14 @@ CTP::CTP(int sockfd, struct sockaddr_in serveraddr)
 	this->serveraddr = serveraddr;
 	this->serverlen = sizeof(serveraddr);
 	this->cong_wind = MSS;
-	this->sshthresh = SEND_BUFF_CAP;
+	this->ssthresh = SEND_BUFF_CAP;
 	this->dupAcks = 0;
 	this->currptr = -1;
 	this->baseptr = -1;
 	this->seq = 0;
+	this->last_ack = -1;
+	this->recv_state = 0;
+	this->recv_wind = SEND_BUFF_CAP;
 }
 
 int CTP::appSend(char * data,long int size)
@@ -78,7 +81,142 @@ void * CTP::rate_control(void * threadid)
     }
 }
 
+void * CTP::receiver_process(void * threadid)
+{
+	struct timeval tv;
+    tv.tv_sec = 1;
+    tv.tv_usec = 0;
+    sockaddr_in clientaddr;
+    socklen_t clientlen;
+    segment recv_seg;
 
+	while(1)
+	{
+		if(setsockopt(this->sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) cout<<"Error in sockopt"<<endl;
+
+		int n = recvfrom(this->sockfd, &recv_seg, sizeof(recv_seg), 0, (struct sockaddr *) &clientaddr, &clientlen);
+		if(n<0)
+		{
+			this->ssthresh = max((long int)MSS,this->cong_wind/2);
+			this->cong_wind = MSS;
+			this->dupAcks = 0;
+			this->recv_state = 0;
+			resend_data_func();
+		}
+		else
+		{
+			if(recv_seg.ack){
+				update_window(recv_seg.ackNo,recv_seg.recv_window);
+			}
+			else
+			{
+				//TODO: DATA
+			}
+		}
+	}
+}
+
+void CTP::resend_data_func()
+{
+	while(!this->sendQ.empty())
+    {
+        this->resendQ.push(this->sendQ.front());
+        this->sendQ.pop();
+    }
+    this->baseptr = this->currptr; 
+}
+
+void CTP::update_window(long int ack_recv, long int recv_window)
+{
+	this->recv_wind = recv_window;
+	if(this->recv_state == 0)
+	{
+		//SLow Start
+		if(ack_recv == this->last_ack)
+		{
+			this->dupAcks += 1;
+		}
+		else
+		{
+			this->cong_wind += MSS;
+			this->dupAcks = 0;
+		}
+		if(this->dupAcks == 3)
+		{
+			this->ssthresh = max((long int)MSS, this->cong_wind/2);
+			this->cong_wind = this->ssthresh + 3*MSS;
+			resend_data_func();
+			this->recv_state = 2;
+		}
+		if(this->cong_wind >= this->ssthresh)
+		{
+			this->recv_state = 1;
+		}
+	}
+	else if(this->recv_state == 1)
+	{
+		//Congestion Avaoidance
+		if(ack_recv == this->last_ack)
+		{
+			this->dupAcks += 1;
+		}
+		else
+		{
+			this->cong_wind += max((long int)MSS,MSS*MSS/this->cong_wind);
+			this->dupAcks = 0;
+		}
+		if(this->dupAcks == 3)
+		{
+			this->ssthresh = max((long int)MSS, this->cong_wind/2);
+			this->cong_wind = this->ssthresh + 3*MSS;
+			resend_data_func();
+			this->recv_state = 2;
+		}
+	}
+	else
+	{
+		//Fast Recovery
+		if(ack_recv == this->last_ack)
+		{
+			this->cong_wind += MSS;
+		}
+		else
+		{
+			this->cong_wind = this->ssthresh;
+			this->dupAcks = 0;
+			this->recv_state = 1;
+		}
+	}
+	this->last_ack = ack_recv;
+	this->currptr = ack_recv;
+	while(!this->sendQ.empty())
+    {
+        segment temp_seg;
+        temp_seg = this->sendQ.front();
+        if(temp_seg.seqNo <= this->currptr)
+        {
+            this->sendQ.pop();
+        }
+        else
+        {
+            break;
+        }
+    }
+    while(!this->resendQ.empty())
+    {
+        segment temp_seg;
+        temp_seg = this->resendQ.front();
+        if(temp_seg.seqNo <= this->currptr)
+        {
+            this->resendQ.pop();
+        }
+        else
+        {
+            break;
+        }
+    }
+	//TODO: SIGNAL CONSUMER THAT WINDOW IS UPDATED
+}
 
 segment CTP::create_packet(long int *seqNo)
 {

@@ -32,7 +32,7 @@ private:
 	int serverlen;
 	queue<char> sending_buffer;
 	long int cong_wind;
-	long int sshthresh;
+	long int ssthresh;
 	long int recv_wind;
 	int dupAcks;
 	long int currptr;
@@ -40,6 +40,8 @@ private:
 	long int seq;
     queue<segment> sendQ;
     queue<segment> resendQ;
+    long int last_ack;
+    int recv_state;
 
 public:
 	CTP(int sockfd, struct sockaddr_in serveraddr);
@@ -49,8 +51,10 @@ private:
 	void sendbuffer_handle(char *, long int);
 	void * rate_control(void *);
 	segment create_packet(long int *);
-	int parse_packets();
-	int update_window();
+	void * receiver_process(void *);
+	void resend_data_func();
+	//int parse_packets();
+	void update_window(long int,long int);
 	int recvbuffer_handle();
 	int send_ack();
 };
