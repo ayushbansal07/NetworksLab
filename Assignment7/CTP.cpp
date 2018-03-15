@@ -24,26 +24,13 @@ CTP::CTP(int sockfd, struct sockaddr_in serveraddr)
 	this->recv_state = 0;
 	this->recv_wind = SEND_BUFF_CAP;
 	this->seq_recv = -1;
+	sem_init(&(this->sQ),0,1);
+	sem_init(&(this->rQ),0,1);
+	sem_init(&(this->srsQ),0,1);
+
 
 	pthread_create(&(this->RATE_CONTROLLER), NULL, rate_control_helper,(void *) this);
 	pthread_create(&(this->RECEIVER_PROCESS), NULL, receiver_process_helper,(void *) this);
-}
-
-int CTP::appRecieve(char * data,long int size)
-{
-	int ct = 0;
-	while(1)
-	{
-		while(!this->recv_buffer.empty() && ct < size)
-		{
-			data[ct] = this->recv_buffer.front();
-			this->recv_buffer.pop();
-			ct++;
-		}
-		if(ct==size) break;
-		usleep(1000);
-	}
-	return ct;
 }
 
 void CTP::appSend(char * data,long int size)
@@ -56,12 +43,14 @@ void CTP::sendbuffer_handle(char * data,long int size)
 	long int ct = 0;
 	while(1)
 	{
+		sem_wait(&(this->sQ));
 		while(this->sending_buffer.size() < SEND_BUFF_CAP && ct < size)
 		{
 			this->sending_buffer.push(data[ct]);
 			ct++;
 		}
 		//TODO: SIGNAL CONSUMER THAT DATA IS PUT INSIDE SENDING_BUFFER
+		sem_post(&(this->sQ));
 		pthread_kill(this->RATE_CONTROLLER,SIGUSR1);
 		if(ct==size) break;
 		usleep(1000);
@@ -77,10 +66,11 @@ void * CTP::rate_control()
 {
     while(1)
     {
-    	long int curr_wind = min(this->cong_wind,this->recv_wind);
+    	long int curr_wind = max(min(this->cong_wind,this->recv_wind),(long int)MSS);
 
-		cout<<"Rate Control "<<curr_wind<<endl;
-    	while(baseptr - currptr < curr_wind && !this->sending_buffer.empty())
+		//cout<<"Rate Control "<<curr_wind<<"Cong_wind = "<<this->cong_wind<<"Recv_wind = "<<this->recv_wind<<endl;
+		sem_wait(&(this->srsQ));
+    	while(this->baseptr -this->currptr < curr_wind && !this->sending_buffer.empty())
     	{
             if(!this->resendQ.empty())
             {
@@ -106,6 +96,7 @@ void * CTP::rate_control()
             }
             
     	}
+		sem_post(&(this->srsQ));
     	pause();
     }
 }
@@ -117,12 +108,15 @@ segment CTP::create_packet(long int *seqNo)
 	temp.seqNo = *seqNo;
 	int ct = 0;
 	bzero(temp.data, MSS);
+	sem_wait(&(this->sQ));
 	while(!this->sending_buffer.empty() && ct < MSS)
 	{
 		temp.data[ct] = this->sending_buffer.front();
 		this->sending_buffer.pop();
 		*seqNo = ((*seqNo) + 1)%MAX_SEQ_NO;
+		ct++;
 	}
+	sem_post(&(this->sQ));
 	temp.len = ct;
 	return temp;
 }
@@ -139,13 +133,13 @@ void * CTP::receiver_process()
     tv.tv_usec = 0;
     sockaddr_in clientaddr;
     socklen_t clientlen;
+    clientlen = sizeof(clientaddr);
     segment recv_seg;
 
 	while(1)
 	{
 		if(setsockopt(this->sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))< 0) cout<<"Error in sockopt"<<endl;
-
-		int n = recvfrom(this->sockfd, &recv_seg, sizeof(recv_seg), 0, (struct sockaddr *) &clientaddr, &clientlen);
+		int n = recvfrom(this->sockfd, &recv_seg, sizeof(recv_seg), 0, (struct sockaddr *) &(this->serveraddr), &(this->serverlen));
 		if(n<0)
 		{
 			cout<<"HERE DATA PACK NOT RECDVD"<<endl;
@@ -157,7 +151,6 @@ void * CTP::receiver_process()
 		}
 		else
 		{
-			cout<<"HERE DATA PACK RECDVD################"<<endl;
 			if(recv_seg.ack){
 				update_window(recv_seg.ackNo,recv_seg.recv_window);
 			}
@@ -172,11 +165,13 @@ void * CTP::receiver_process()
 
 void CTP::resend_data_func()
 {
+	sem_wait(&(this->srsQ));
 	while(!this->sendQ.empty())
     {
         this->resendQ.push(this->sendQ.front());
         this->sendQ.pop();
     }
+    sem_post(&(this->srsQ));
     this->baseptr = this->currptr; 
 }
 
@@ -239,10 +234,13 @@ void CTP::update_window(long int ack_recv, long int recv_window)
 			this->cong_wind = this->ssthresh;
 			this->dupAcks = 0;
 			this->recv_state = 1;
+			//TOSEE??
+			//resend_data_func();
 		}
 	}
 	this->last_ack = ack_recv;
 	this->currptr = ack_recv;
+	sem_wait(&(this->srsQ));
 	while(!this->sendQ.empty())
     {
         segment temp_seg;
@@ -269,6 +267,7 @@ void CTP::update_window(long int ack_recv, long int recv_window)
             break;
         }
     }
+    sem_post(&(this->srsQ));
 	pthread_kill(this->RATE_CONTROLLER,SIGUSR1);
 
 	//TODO: SIGNAL CONSUMER THAT WINDOW IS UPDATED
@@ -277,18 +276,24 @@ void CTP::update_window(long int ack_recv, long int recv_window)
 void CTP::recvbuffer_handle(segment recvd_seg)
 {
 	long int expected_seq = (this->seq_recv + 1)%MAX_SEQ_NO;
+	//cout<<"Expected = "<<expected_seq<<" recvd = "<<recvd_seg.seqNo<<" len = "<<recvd_seg.len<<endl;
 	if(expected_seq >= recvd_seg.seqNo && expected_seq < recvd_seg.seqNo + recvd_seg.len)
 	{
+
 		int ct = expected_seq - recvd_seg.seqNo;
+		cout<<"Expected = "<<expected_seq<<" recvd = "<<recvd_seg.seqNo<<" ct = "<<ct<<endl;
 		int added = 0;
-		while(this->recv_buffer.size() < RECV_BUFFER_CAP && ct < recvd_seg.len)
+		sem_wait(&(this->rQ));
+		while(this->recv_buffer.size() < RECV_BUFFER_CAP && ct < recvd_seg.len && ct>=0)
 		{
 			this->recv_buffer.push(recvd_seg.data[ct]);
 			ct++;
 			added++;
 		}
+		sem_post(&(this->rQ));
 		this->seq_recv = (this->seq_recv + added)%MAX_SEQ_NO;
 	}
+	cout<<"Recv Buff handle sz = "<<this->recv_buffer.size()<<endl;
 	send_ack(this->seq_recv);
 }
 
@@ -300,6 +305,28 @@ void CTP::send_ack(long int ackNo)
 	temp.recv_window = (RECV_BUFFER_CAP - this->recv_buffer.size());
 	int n = sendto(this->sockfd, &temp,sizeof(temp),0,(struct sockaddr *)&(this->serveraddr),this->serverlen);
 	if(n<0) cout<<"Error sending ack"<<endl;
+}
+
+int CTP::appRecieve(char * data,long int size)
+{
+	int ct = 0;
+	while(1)
+	{
+		/*int sz = this->recv_buffer.size();
+		if(sz > 0)
+			cout<<"Recv Buff size = "<<sz<<endl;*/
+		sem_wait(&(this->rQ));
+		while(!this->recv_buffer.empty() && ct < size)
+		{
+			data[ct] = this->recv_buffer.front();
+			this->recv_buffer.pop();
+			ct++;
+		}
+		sem_post(&(this->rQ));
+		if(ct==size) break;
+		usleep(1000);
+	}
+	return ct;
 }
 
 /*int main()

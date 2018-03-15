@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <queue>
 #include <pthread.h>
+#include <semaphore.h>
 
 #define BUFF_SIZE 1024
 #define SEND_BUFF_CAP 1024000
@@ -31,7 +32,7 @@ class CTP{
 private:
 	int sockfd;
 	struct sockaddr_in serveraddr;
-	int serverlen;
+	socklen_t serverlen;
 	queue<char> sending_buffer;
 	long int cong_wind;
 	long int ssthresh;
@@ -47,6 +48,7 @@ private:
     queue<char> recv_buffer;
     long int seq_recv;
     pthread_t RATE_CONTROLLER, RECEIVER_PROCESS;
+    sem_t sQ,rQ,srsQ;
 
 public:
 	CTP(int sockfd, struct sockaddr_in serveraddr);
