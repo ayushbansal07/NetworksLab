@@ -54,9 +54,25 @@ int main(int argc, char **argv)
 	  (char *)&serveraddr.sin_addr.s_addr, server->h_length);
     serveraddr.sin_port = htons(portno);
 
+    FILE *file;
+    file = fopen("lion.jpg","r");
     CTP *prot = new CTP(sockfd,serveraddr);
-    char * data = "lion";
-    prot->appSend(data,2);
+    fseek(file,0,SEEK_END);
+    int filesize = ftell(file);
+    fseek(file,0,SEEK_SET);
+
+    prot->appSend((char*)&filesize,sizeof(int));
+
+    char data[1024];
+    while(!feof(file))
+    {
+    	int read = fread(data, 1, sizeof(data),file);
+    	prot->appSend(data,read);
+    }
+    int read;
+    cout<<"Enetr wasre"<<endl;
+    cin>>read;
+    sleep(0);
 
 
 }

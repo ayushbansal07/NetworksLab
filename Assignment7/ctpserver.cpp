@@ -77,9 +77,23 @@ int main(int argc, char **argv)
   clientlen = sizeof(clientaddr);
 
   CTP *prot = new CTP(sockfd,clientaddr);
-  char data[5];
-  int x = prot->appRecieve(data,2);
+  char data[1024];
+  int torecv;
+  prot->appRecieve((char *)&torecv,sizeof(int));
+  cout<<"TO RECEVIVE = "<<torecv<<endl;
+  int recvd = 0;
+  FILE *file;
+  file = fopen("rec_lion.jpg","w");
+  while(recvd < torecv)
+  {
+  	int x = prot->appRecieve(data,min(1024,torecv-recvd));
+  	recvd += x;
+  	fwrite(data,1,x,file);
+  }
+  fclose(file);
+ /* int x = prot->appRecieve(data,);
   cout<<data<<endl;
   cout<<x<<endl;
+  int waste*/
 
 }

@@ -27,7 +27,7 @@ CTP::CTP(int sockfd, struct sockaddr_in serveraddr)
 	sem_init(&(this->sQ),0,1);
 	sem_init(&(this->rQ),0,1);
 	sem_init(&(this->srsQ),0,1);
-
+	sem_init(&(this->params),0,1);
 
 	pthread_create(&(this->RATE_CONTROLLER), NULL, rate_control_helper,(void *) this);
 	pthread_create(&(this->RECEIVER_PROCESS), NULL, receiver_process_helper,(void *) this);
@@ -66,14 +66,43 @@ void * CTP::rate_control()
 {
     while(1)
     {
+    	sem_wait(&(this->params));
+    	sem_wait(&(this->srsQ));
     	long int curr_wind = max(min(this->cong_wind,this->recv_wind),(long int)MSS);
 
-		//cout<<"Rate Control "<<curr_wind<<"Cong_wind = "<<this->cong_wind<<"Recv_wind = "<<this->recv_wind<<endl;
-		sem_wait(&(this->srsQ));
-    	while(this->baseptr -this->currptr < curr_wind && !this->sending_buffer.empty())
+		cout<<"Rate Control "<<curr_wind<<"Cong_wind = "<<this->cong_wind<<"Recv_wind = "<<this->recv_wind<<"Seding buff sz"<<this->sending_buffer.size()<<"Current window = "<<curr_wind<<endl;
+		cout<<"Send Queue = "<<sendQ.size()<<" Resend Q = "<<resendQ.size()<<endl;
+    	while(this->baseptr -this->currptr < curr_wind)
     	{
+    		while(!this->sendQ.empty())
+		    {
+		        segment temp_seg;
+		        temp_seg = this->sendQ.front();
+		        if(temp_seg.seqNo + temp_seg.len - 1 <= this->currptr)
+		        {
+		            this->sendQ.pop();
+		        }
+		        else
+		        {
+		            break;
+		        }
+		    }
+		    while(!this->resendQ.empty())
+		    {
+		        segment temp_seg;
+		        temp_seg = this->resendQ.front();
+		        if(temp_seg.seqNo + temp_seg.len - 1 <= this->currptr)
+		        {
+		            this->resendQ.pop();
+		        }
+		        else
+		        {
+		            break;
+		        }
+		    }
             if(!this->resendQ.empty())
             {
+            	cout<<"INSIDEEEEEEEE RESEND Q PART"<<endl;
                 segment temp_seg = this->resendQ.front();
                 this->resendQ.pop();
                 this->sendQ.push(temp_seg);
@@ -86,16 +115,19 @@ void * CTP::rate_control()
             }
             else
             {
+            	if(this->sending_buffer.empty()) break;
                 segment to_send = create_packet(&(this->seq));
                 this->sendQ.push(to_send);
                 int n = sendto(this->sockfd, &to_send, sizeof(to_send), 0, (struct sockaddr *) &(this->serveraddr), this->serverlen);
                 if(n<0) cout<<"Error sending data to server, pkt no = "<<(this->seq - to_send.len)<<endl;
                 else {
+
                     this->baseptr += to_send.len;              
                 }
             }
             
     	}
+    	sem_post(&(this->params));
 		sem_post(&(this->srsQ));
     	pause();
     }
@@ -142,12 +174,14 @@ void * CTP::receiver_process()
 		int n = recvfrom(this->sockfd, &recv_seg, sizeof(recv_seg), 0, (struct sockaddr *) &(this->serveraddr), &(this->serverlen));
 		if(n<0)
 		{
-			cout<<"HERE DATA PACK NOT RECDVD"<<endl;
+			cout<<"HERE DATA PACK NOT RECDVD baseptr = "<<this->baseptr<<"currptr = "<<this->currptr<<endl;
+			sem_wait(&(this->params));
 			this->ssthresh = max((long int)MSS,this->cong_wind/2);
 			this->cong_wind = MSS;
 			this->dupAcks = 0;
 			this->recv_state = 0;
 			resend_data_func();
+			sem_post(&(this->params));
 		}
 		else
 		{
@@ -173,10 +207,41 @@ void CTP::resend_data_func()
     }
     sem_post(&(this->srsQ));
     this->baseptr = this->currptr; 
+    /*sem_wait(&(this->srsQ));
+	while(!this->sendQ.empty())
+    {
+        segment temp_seg;
+        temp_seg = this->sendQ.front();
+        if(temp_seg.seqNo + temp_seg.len - 1 <= this->currptr)
+        {
+            this->sendQ.pop();
+        }
+        else
+        {
+            break;
+        }
+    }
+    while(!this->resendQ.empty())
+    {
+        segment temp_seg;
+        temp_seg = this->resendQ.front();
+        if(temp_seg.seqNo + temp_seg.len - 1 <= this->currptr)
+        {
+            this->resendQ.pop();
+        }
+        else
+        {
+            break;
+        }
+    }
+    sem_post(&(this->srsQ));*/
+    pthread_kill(this->RATE_CONTROLLER,SIGUSR1);
 }
 
 void CTP::update_window(long int ack_recv, long int recv_window)
 {
+	cout<<"ACK RECEVIVED = "<<ack_recv<<"Receiver window = "<<recv_window<<endl;
+	sem_wait(&(this->params));
 	this->recv_wind = recv_window;
 	if(this->recv_state == 0)
 	{
@@ -240,7 +305,8 @@ void CTP::update_window(long int ack_recv, long int recv_window)
 	}
 	this->last_ack = ack_recv;
 	this->currptr = ack_recv;
-	sem_wait(&(this->srsQ));
+	sem_post(&(this->params));
+	/*sem_wait(&(this->srsQ));
 	while(!this->sendQ.empty())
     {
         segment temp_seg;
@@ -267,7 +333,7 @@ void CTP::update_window(long int ack_recv, long int recv_window)
             break;
         }
     }
-    sem_post(&(this->srsQ));
+    sem_post(&(this->srsQ));*/
 	pthread_kill(this->RATE_CONTROLLER,SIGUSR1);
 
 	//TODO: SIGNAL CONSUMER THAT WINDOW IS UPDATED
@@ -276,7 +342,7 @@ void CTP::update_window(long int ack_recv, long int recv_window)
 void CTP::recvbuffer_handle(segment recvd_seg)
 {
 	long int expected_seq = (this->seq_recv + 1)%MAX_SEQ_NO;
-	//cout<<"Expected = "<<expected_seq<<" recvd = "<<recvd_seg.seqNo<<" len = "<<recvd_seg.len<<endl;
+	cout<<"Expected = "<<expected_seq<<" recvd = "<<recvd_seg.seqNo<<" len = "<<recvd_seg.len<<endl;
 	if(expected_seq >= recvd_seg.seqNo && expected_seq < recvd_seg.seqNo + recvd_seg.len)
 	{
 
@@ -299,10 +365,12 @@ void CTP::recvbuffer_handle(segment recvd_seg)
 
 void CTP::send_ack(long int ackNo)
 {
+
 	segment temp;
 	temp.ack = true;
 	temp.ackNo = ackNo;
 	temp.recv_window = (RECV_BUFFER_CAP - this->recv_buffer.size());
+	cout<<"SENDING ACKKKKKKKKKKKKKKKKKKKKKK recv wind = "<<temp.recv_window<<" ack no = "<<ackNo<<endl;
 	int n = sendto(this->sockfd, &temp,sizeof(temp),0,(struct sockaddr *)&(this->serveraddr),this->serverlen);
 	if(n<0) cout<<"Error sending ack"<<endl;
 }

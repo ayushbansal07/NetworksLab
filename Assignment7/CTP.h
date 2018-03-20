@@ -48,7 +48,7 @@ private:
     queue<char> recv_buffer;
     long int seq_recv;
     pthread_t RATE_CONTROLLER, RECEIVER_PROCESS;
-    sem_t sQ,rQ,srsQ;
+    sem_t sQ,rQ,srsQ,params;
 
 public:
 	CTP(int sockfd, struct sockaddr_in serveraddr);
