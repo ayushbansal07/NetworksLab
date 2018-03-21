@@ -11,6 +11,8 @@
 #include <errno.h>
 #include <sys/time.h>
 
+#define MAX_FILE_NAME_SIZE 30
+
 using namespace std;
 
 void error(char *msg) {
@@ -79,11 +81,15 @@ int main(int argc, char **argv)
   CTP *prot = new CTP(sockfd,clientaddr);
   char data[1024];
   int torecv;
+  char filename_c[MAX_FILE_NAME_SIZE];
+  prot->appRecieve(filename_c,sizeof(filename_c));
   prot->appRecieve((char *)&torecv,sizeof(int));
   cout<<"TO RECEVIVE = "<<torecv<<endl;
   int recvd = 0;
   FILE *file;
-  file = fopen("rec_lion.jpg","w");
+  string filename = filename_c;
+  filename = "rec_"+filename;
+  file = fopen(filename.c_str(),"w");
   while(recvd < torecv)
   {
   	int x = prot->appRecieve(data,min(1024,torecv-recvd));

@@ -11,6 +11,8 @@
 #include <errno.h>
 #include <sys/time.h>
 
+#define MAX_FILE_NAME_SIZE 30
+
 using namespace std;
 
 void error(char *msg) {
@@ -20,7 +22,7 @@ void error(char *msg) {
 
 int main(int argc, char **argv)
 {
-	int sockfd, portno, n;
+    int sockfd, portno, n;
     socklen_t serverlen;
     struct sockaddr_in serveraddr;
     struct hostent *server;
@@ -51,23 +53,29 @@ int main(int argc, char **argv)
     bzero((char *) &serveraddr, sizeof(serveraddr));
     serveraddr.sin_family = AF_INET;
     bcopy((char *)server->h_addr, 
-	  (char *)&serveraddr.sin_addr.s_addr, server->h_length);
+      (char *)&serveraddr.sin_addr.s_addr, server->h_length);
     serveraddr.sin_port = htons(portno);
 
+    string filename;
+    cout<<"Enter File Name"<<endl;
+    cin>>filename;
+    char filename_c[MAX_FILE_NAME_SIZE];
+    strcpy(filename_c,filename.c_str());
     FILE *file;
-    file = fopen("lion.jpg","r");
+    file = fopen(filename.c_str(),"r");
     CTP *prot = new CTP(sockfd,serveraddr);
     fseek(file,0,SEEK_END);
     int filesize = ftell(file);
     fseek(file,0,SEEK_SET);
 
+    prot->appSend((char *)filename_c,sizeof(filename_c));
     prot->appSend((char*)&filesize,sizeof(int));
 
     char data[1024];
     while(!feof(file))
     {
-    	int read = fread(data, 1, sizeof(data),file);
-    	prot->appSend(data,read);
+        int read = fread(data, 1, sizeof(data),file);
+        prot->appSend(data,read);
     }
     int read;
     cout<<"Enetr wasre"<<endl;
